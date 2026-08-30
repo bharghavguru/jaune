@@ -1,618 +1,743 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { ContributionDay, LearningCommit } from '../types';
-import { ContributionCell } from './ContributionCell';
-import { generateContributionsForYear } from '../data/initialData';
-import { Calendar, ChevronDown, Sparkles, X, Check, ArrowRight, Eye } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { sound } from '../utils/sound';
+import React, { useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ContributionDay } from '../types';
 
 interface ContributionGraphProps {
   days?: ContributionDay[];
-  selectedCategory: string;
-  onSelectCategory: (cat: string) => void;
-  categories: string[];
-  onQuickCommit: () => void;
-  todayCommits?: LearningCommit[];
+  todayCommits?: any[];
+  selectedCategory?: string;
+  onSelectCategory?: (category: string) => void;
+  categories?: string[];
+  onQuickCommit?: () => void;
 }
 
-interface HoverState {
-  day: ContributionDay | null;
+interface TooltipState {
+  visible: boolean;
   x: number;
   y: number;
+  day: ContributionDay | null;
 }
 
-// GitHub-standard month names
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/* -------------------------------------------------------
+   Constants
+------------------------------------------------------- */
+
+const CELL_SIZE = 16;
+const CELL_GAP = 5;
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+const WEEKDAYS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+
+/* -------------------------------------------------------
+   Component
+------------------------------------------------------- */
 
 export const ContributionGraph: React.FC<ContributionGraphProps> = ({
-  days: initialDays,
-  selectedCategory,
-  onSelectCategory,
-  categories,
-  onQuickCommit,
+  days = [],
   todayCommits = [],
+  selectedCategory = 'All',
+  onSelectCategory,
+  categories = ['All'],
 }) => {
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [isYearDropdownOpen, setIsYearDropdownOpen] = useState<boolean>(false);
-  const [hover, setHover] = useState<HoverState>({ day: null, x: 0, y: 0 });
-  const [activeTouchDay, setActiveTouchDay] = useState<ContributionDay | null>(null);
-  const [inspectedDay, setInspectedDay] = useState<ContributionDay | null>(null);
-  const graphContainerRef = useRef<HTMLDivElement>(null);
-  const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const [year, setYear] = useState<number>(new Date().getFullYear());
 
-  // Auto-scroll mobile view to current active month (August for 2026) on initial load
-  useEffect(() => {
-    if (scrollViewportRef.current && selectedYear === 2026) {
-      // Scroll ~60% to show current month (August) on small mobile screens
-      const targetScroll = scrollViewportRef.current.scrollWidth * 0.55;
-      scrollViewportRef.current.scrollLeft = targetScroll;
+  const [tooltip, setTooltip] = useState<TooltipState>({
+    visible: false,
+    x: 0,
+    y: 0,
+    day: null,
+  });
+
+  /* -------------------------------------------------------
+     Build contribution data
+  ------------------------------------------------------- */
+
+  const contributionDays = useMemo(() => {
+    if (days.length > 0) {
+      return days;
     }
-  }, [selectedYear]);
 
-  // Generate real calendar days for the selected year
-  const rawYearDays = useMemo(() => {
-    return generateContributionsForYear(selectedYear, todayCommits);
-  }, [selectedYear, todayCommits]);
+    /*
+      Fallback for cases where App passes todayCommits
+      but doesn't pass the generated year data.
+    */
 
-  // Process category filters and assemble the continuous week-column calendar structure
-  const { weeks, monthLabels, stats } = useMemo(() => {
-    // Apply space filter if chosen
-    const processedDays = rawYearDays.map((d) => {
-      if (selectedCategory === 'All') return d;
-      const filteredCommits = d.commits.filter((c) => c.category === selectedCategory);
-      const filteredCount = filteredCommits.length;
+    const result: ContributionDay[] = [];
+
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31);
+
+    const current = new Date(start);
+
+    while (current <= end) {
+      const dateString = [
+        current.getFullYear(),
+        String(current.getMonth() + 1).padStart(2, '0'),
+        String(current.getDate()).padStart(2, '0'),
+      ].join('-');
+
+      const commitsForDay = todayCommits.filter(
+        (commit) => commit.dateString === dateString
+      );
+
+      const count = commitsForDay.length;
+
       let intensity: 0 | 1 | 2 | 3 | 4 | 5 = 0;
-      if (filteredCount > 0) {
-        if (filteredCount <= 2) intensity = 1;
-        else if (filteredCount <= 4) intensity = 2;
-        else if (filteredCount <= 6) intensity = 3;
-        else if (filteredCount <= 8) intensity = 4;
-        else intensity = 5;
-      }
+
+      if (count === 0) intensity = 0;
+      else if (count === 1) intensity = 1;
+      else if (count <= 3) intensity = 2;
+      else if (count <= 5) intensity = 3;
+      else if (count <= 7) intensity = 4;
+      else intensity = 5;
+
+      result.push({
+        date: dateString,
+        dateObj: new Date(current),
+        count,
+        commits: commitsForDay,
+        intensity,
+        dayOfWeek: current.getDay(),
+        isToday: dateString === new Date().toISOString().slice(0, 10),
+        isFuture: current > new Date(),
+        monthName: MONTHS[current.getMonth()],
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+
+    return result;
+  }, [days, todayCommits, year]);
+
+  /* -------------------------------------------------------
+     Filter by category
+  ------------------------------------------------------- */
+
+  const filteredDays = useMemo(() => {
+    if (selectedCategory === 'All') {
+      return contributionDays;
+    }
+
+    return contributionDays.map((day) => {
+      const filteredCommits = day.commits.filter(
+        (commit) => commit.category === selectedCategory
+      );
+
+      const count = filteredCommits.length;
+
+      let intensity: 0 | 1 | 2 | 3 | 4 | 5 = 0;
+
+      if (count === 0) intensity = 0;
+      else if (count === 1) intensity = 1;
+      else if (count <= 3) intensity = 2;
+      else if (count <= 5) intensity = 3;
+      else if (count <= 7) intensity = 4;
+      else intensity = 5;
+
       return {
-        ...d,
-        count: filteredCount,
+        ...day,
+        count,
         commits: filteredCommits,
-        intensity: d.isFuture ? 0 : intensity,
+        intensity,
       };
     });
+  }, [contributionDays, selectedCategory]);
 
-    // Calendar logic:
-    // We map days into 52/53 week columns.
-    // Each column has 7 row slots (0 to 6).
-    const columns: (ContributionDay | null)[][] = [];
-    let currentWeek: (ContributionDay | null)[] = [];
+  /* -------------------------------------------------------
+     Group days by month
+  ------------------------------------------------------- */
 
-    // The first day of the year (Jan 1)
-    const firstDay = processedDays[0];
-    const startDayOfWeek = firstDay ? firstDay.dayOfWeek : 0; // 0 is Sunday
+  const monthData = useMemo(() => {
+    const months: ContributionDay[][] = Array.from(
+      { length: 12 },
+      () => []
+    );
 
-    // Pad the first week column with nulls for days prior to Jan 1
-    for (let p = 0; p < startDayOfWeek; p++) {
-      currentWeek.push(null);
-    }
+    filteredDays.forEach((day) => {
+      const month = day.dateObj.getMonth();
 
-    processedDays.forEach((day) => {
-      currentWeek.push(day);
-      if (currentWeek.length === 7) {
-        columns.push(currentWeek);
-        currentWeek = [];
+      if (month >= 0 && month < 12) {
+        months[month].push(day);
       }
     });
 
-    // Pad the final week if it ends before Saturday
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) {
-        currentWeek.push(null);
-      }
-      columns.push(currentWeek);
-    }
+    return months;
+  }, [filteredDays]);
 
-    // Accurately compute Month Labels with NO collision:
-    const computedMonths: { label: string; colIndex: number }[] = [];
-    const recordedMonths = new Set<number>();
+  /* -------------------------------------------------------
+     Stats
+  ------------------------------------------------------- */
 
-    columns.forEach((week, colIdx) => {
-      for (const day of week) {
-        if (day) {
-          const monthIdx = day.dateObj.getUTCMonth();
-          if (!recordedMonths.has(monthIdx)) {
-            recordedMonths.add(monthIdx);
-            computedMonths.push({
-              label: MONTH_NAMES[monthIdx],
-              colIndex: colIdx,
-            });
-            break;
-          }
-        }
-      }
+  const activeDays = filteredDays.filter((day) => day.count > 0).length;
+
+  const totalConcepts = filteredDays.reduce(
+    (total, day) => total + day.count,
+    0
+  );
+
+  const consistency =
+    filteredDays.length > 0
+      ? ((activeDays / filteredDays.filter((d) => !d.isFuture).length) * 100)
+      : 0;
+
+  /* -------------------------------------------------------
+     Tooltip handlers
+  ------------------------------------------------------- */
+
+  const handleMouseEnter = (
+    event: React.MouseEvent<HTMLDivElement>,
+    day: ContributionDay
+  ) => {
+    setTooltip({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      day,
     });
+  };
 
-    // Calculate real stats for this year
-    const pastOrTodayDays = processedDays.filter((d) => !d.isFuture);
-    const activeDays = pastOrTodayDays.filter((d) => d.count > 0).length;
-    const totalConcepts = pastOrTodayDays.reduce((acc, d) => acc + d.count, 0);
-    const activePercentage = pastOrTodayDays.length > 0 
-      ? ((activeDays / pastOrTodayDays.length) * 100).toFixed(1)
-      : '0.0';
+  const handleMouseMove = (
+    event: React.MouseEvent<HTMLDivElement>,
+    day: ContributionDay
+  ) => {
+    setTooltip({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      day,
+    });
+  };
 
-    return {
-      weeks: columns,
-      monthLabels: computedMonths,
-      stats: { activeDays, totalConcepts, activePercentage },
-    };
-  }, [rawYearDays, selectedCategory]);
+  const handleMouseLeave = () => {
+    setTooltip((previous) => ({
+      ...previous,
+      visible: false,
+    }));
+  };
 
-  const handleCellHover = (day: ContributionDay, event: React.MouseEvent<HTMLDivElement>) => {
-    sound.playClick(1200);
-    const rect = event.currentTarget.getBoundingClientRect();
-    const container = graphContainerRef.current?.getBoundingClientRect();
-    if (container) {
-      const cellCenterX = rect.left - container.left + rect.width / 2;
-      const cellTopY = rect.top - container.top;
-      // Clamp X position so tooltip is never clipped at left or right boundaries
-      const minX = 75;
-      const maxX = Math.max(minX, container.width - 75);
-      const clampedX = Math.min(Math.max(cellCenterX, minX), maxX);
+  /* -------------------------------------------------------
+     Cell color / glow
+  ------------------------------------------------------- */
 
-      setHover({
-        day,
-        x: clampedX,
-        y: cellTopY,
-      });
-    } else {
-      setHover({
-        day,
-        x: rect.left + rect.width / 2,
-        y: rect.top,
-      });
+  const getCellStyle = (day: ContributionDay): React.CSSProperties => {
+    const intensity = day.intensity;
+
+    if (day.isFuture) {
+      return {
+        backgroundColor: '#0d0f13',
+        border: '1px solid #151820',
+        boxShadow: 'none',
+      };
+    }
+
+    switch (intensity) {
+      case 0:
+        return {
+          backgroundColor: '#15171c',
+          border: '1px solid #22252d',
+          boxShadow: 'none',
+        };
+
+      case 1:
+        return {
+          backgroundColor: '#51460a',
+          border: '1px solid #67580a',
+          boxShadow: 'none',
+        };
+
+      case 2:
+        return {
+          backgroundColor: '#786609',
+          border: '1px solid #927a0a',
+          boxShadow: '0 0 3px rgba(255, 219, 26, 0.12)',
+        };
+
+      case 3:
+        return {
+          backgroundColor: '#a68a0b',
+          border: '1px solid #c09e0d',
+          boxShadow: '0 0 6px rgba(255, 219, 26, 0.2)',
+        };
+
+      case 4:
+        return {
+          backgroundColor: '#d1ad0f',
+          border: '1px solid #e3c21a',
+          boxShadow: '0 0 10px rgba(255, 219, 26, 0.35)',
+        };
+
+      case 5:
+      default:
+        return {
+          backgroundColor: '#ffdb1a',
+          border: '1px solid #ffe76b',
+          boxShadow:
+            '0 0 7px rgba(255, 219, 26, 0.75), 0 0 18px rgba(255, 219, 26, 0.35)',
+        };
     }
   };
 
-  const handleCellLeave = () => {
-    setHover({ day: null, x: 0, y: 0 });
-  };
+  /* -------------------------------------------------------
+     Format tooltip date
+  ------------------------------------------------------- */
 
-  const handleCellClick = (day: ContributionDay) => {
-    if (day.isFuture) return;
-    sound.playClick(900);
-    // On touch or click, update active touch day & inspected modal
-    setActiveTouchDay((prev) => (prev?.date === day.date ? null : day));
-  };
+  const formatDate = (date: string) => {
+    const parsed = new Date(`${date}T00:00:00`);
 
-  // Format date for tooltip (e.g. Aug 30, 2026)
-  const formatTooltipDate = (dateStr: string) => {
-    const d = new Date(`${dateStr}T12:00:00Z`);
-    return d.toLocaleDateString('en-US', {
+    return parsed.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
-      timeZone: 'UTC',
     });
   };
 
-  // Format concept count label
-  const getConceptCountLabel = (count: number, isFuture: boolean) => {
-    if (isFuture) return 'Future date';
-    if (count === 0) return '0 concepts learned';
-    if (count === 1) return '1 concept learned';
-    return `${count} concepts learned`;
-  };
+  /* -------------------------------------------------------
+     Tooltip
+     
+     IMPORTANT:
+     createPortal() puts it directly under <body>.
+     Therefore it cannot be clipped by the graph container.
+  ------------------------------------------------------- */
 
-  // Format date helper for modal
-  const formatDateFull = (dateStr: string) => {
-    const d = new Date(`${dateStr}T12:00:00Z`);
-    return d.toLocaleDateString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      timeZone: 'UTC',
-    });
-  };
+  const tooltipElement =
+    tooltip.visible && tooltip.day
+      ? createPortal(
+          <div
+            className="fixed z-[99999] pointer-events-none"
+            style={{
+              left: tooltip.x,
+              top: tooltip.y - 12,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <div
+              className="
+                relative
+                min-w-[150px]
+                max-w-[220px]
+                rounded-lg
+                border
+                border-[#3a3518]
+                bg-[#111217]
+                px-3
+                py-2.5
+                shadow-[0_10px_35px_rgba(0,0,0,0.55)]
+              "
+            >
+              {/* Date */}
+              <div className="text-[11px] font-mono text-[#8f91a1] whitespace-nowrap">
+                {formatDate(tooltip.day.date)}
+              </div>
 
-  const availableYears = [2026, 2025, 2024];
+              {/* Count */}
+              <div className="mt-1 text-[13px] font-semibold text-[#ffdb1a] whitespace-nowrap">
+                {tooltip.day.count === 0
+                  ? 'No concepts learned'
+                  : `${tooltip.day.count} ${
+                      tooltip.day.count === 1 ? 'concept' : 'concepts'
+                    } learned`}
+              </div>
+
+              {/* Tiny arrow */}
+              <div
+                className="
+                  absolute
+                  left-1/2
+                  -bottom-[5px]
+                  h-2.5
+                  w-2.5
+                  -translate-x-1/2
+                  rotate-45
+                  border-r
+                  border-b
+                  border-[#3a3518]
+                  bg-[#111217]
+                "
+              />
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
+  /* -------------------------------------------------------
+     Render
+  ------------------------------------------------------- */
 
   return (
-    <div
-      id="contribution-graph-section"
-      ref={graphContainerRef}
-      className="relative w-full rounded-xl bg-[#121318] border border-[#23242c] p-4 sm:p-6 lg:p-7 shadow-[0_4px_24px_rgba(0,0,0,0.4)] transition-all overflow-hidden"
+    <section
+      className="
+        w-full
+        rounded-2xl
+        border
+        border-[#24262f]
+        bg-[#111217]
+        p-4
+        sm:p-5
+        md:p-6
+        overflow-hidden
+      "
     >
-      {/* Header section with Year Selector and Categories */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-5 border-b border-[#202129]">
-        <div>
-          <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold font-display tracking-tight text-white flex items-center gap-2">
-              Learning Contributions
-            </h2>
+      {/* ---------------------------------------------------
+          Header
+      --------------------------------------------------- */}
 
-            {/* Year Selector Dropdown Pill */}
-            <div className="relative">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-bold text-white font-display">
+                Learning Contributions
+              </h2>
+
               <button
-                id="year-selector-btn"
-                onClick={() => {
-                  sound.playClick(1100);
-                  setIsYearDropdownOpen((prev) => !prev);
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-[#1a1b22] text-[#ffdb1a] border border-[#ffdb1a]/30 hover:border-[#ffdb1a]/60 hover:bg-[#22232d] transition-all shadow-[0_0_10px_rgba(255,219,26,0.1)]"
-                aria-haspopup="listbox"
-                aria-expanded={isYearDropdownOpen}
+                type="button"
+                className="
+                  inline-flex
+                  items-center
+                  gap-1
+                  rounded-lg
+                  border
+                  border-[#63560a]
+                  bg-[#171711]
+                  px-2.5
+                  py-1
+                  text-[11px]
+                  font-mono
+                  font-bold
+                  text-[#ffdb1a]
+                  hover:bg-[#211f10]
+                  transition-colors
+                "
               >
-                <span>{selectedYear}</span>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                    isYearDropdownOpen ? 'rotate-180 text-white' : 'text-[#ffdb1a]'
-                  }`}
-                />
+                {year}
+                <span className="text-[10px]">⌄</span>
               </button>
 
-              <AnimatePresence>
-                {isYearDropdownOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-30"
-                      onClick={() => setIsYearDropdownOpen(false)}
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, y: 4, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 2, scale: 0.96 }}
-                      transition={{ duration: 0.12 }}
-                      className="absolute left-0 mt-1.5 w-32 rounded-lg bg-[#181922] border border-[#2e2f3d] shadow-xl py-1 z-40 overflow-hidden"
-                    >
-                      {availableYears.map((year) => {
-                        const isSelected = year === selectedYear;
-                        return (
-                          <button
-                            key={year}
-                            id={`year-option-${year}`}
-                            onClick={() => {
-                              sound.playClick(1000);
-                              setSelectedYear(year);
-                              setIsYearDropdownOpen(false);
-                            }}
-                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-mono transition-colors ${
-                              isSelected
-                                ? 'bg-[#ffdb1a]/15 text-[#ffdb1a] font-bold'
-                                : 'text-[#9b9ca8] hover:bg-[#22232f] hover:text-white'
-                            }`}
-                          >
-                            <span>{year}</span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-[#ffdb1a]" />}
-                          </button>
-                        );
-                      })}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
+              <span
+                className="
+                  inline-flex
+                  items-center
+                  gap-1.5
+                  rounded-full
+                  border
+                  border-[#5d520c]
+                  bg-[#171711]
+                  px-2.5
+                  py-1
+                  text-[10px]
+                  font-mono
+                  text-[#ffdb1a]
+                "
+              >
+                ✣ Active Cycle
+              </span>
             </div>
 
-            {selectedYear === 2026 && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono font-medium bg-[#ffdb1a]/10 text-[#ffdb1a] border border-[#ffdb1a]/25">
-                <Sparkles className="w-3 h-3" />
-                Active Cycle
-              </span>
-            )}
+            <p className="mt-1 text-sm text-[#9b9dab]">
+              Every concept leaves a mark. Complete calendar overview for{' '}
+              {year}.
+            </p>
           </div>
-          <p className="text-xs sm:text-sm text-[#9b9ca8] mt-1">
-            Every concept leaves a mark. Complete calendar overview for {selectedYear}.
-          </p>
+
+          {/* Category filters */}
+
+          {categories.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <span className="mr-1 text-[11px] font-mono text-[#77798a]">
+                Filter Space:
+              </span>
+
+              {categories.map((category) => {
+                const active = selectedCategory === category;
+
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => onSelectCategory?.(category)}
+                    className={`
+                      rounded-lg
+                      border
+                      px-3
+                      py-1.5
+                      text-[11px]
+                      transition-all
+                      ${
+                        active
+                          ? 'border-[#ffdb1a] bg-[#ffdb1a] text-black font-bold shadow-[0_0_14px_rgba(255,219,26,0.3)]'
+                          : 'border-[#292c35] bg-[#15171d] text-[#a0a2b2] hover:border-[#555766] hover:text-white'
+                      }
+                    `}
+                  >
+                    {category}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Space / Category Filter Pills */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs text-[#717282] font-mono mr-1 hidden xl:inline">Filter Space:</span>
-          {['All', 'Data Structures', 'Java', 'SQL', 'Computer Networks', 'React'].map((cat) => {
-            const isSelected = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                id={`filter-${cat.toLowerCase().replace(/\s+/g, '-')}`}
-                onClick={() => {
-                  sound.playClick(1000);
-                  onSelectCategory(cat);
-                }}
-                className={`
-                  px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs rounded-md transition-all font-medium whitespace-nowrap
-                  ${
-                    isSelected
-                      ? 'bg-[#ffdb1a] text-black font-semibold shadow-[0_0_12px_rgba(255,219,26,0.35)]'
-                      : 'bg-[#181920] text-[#a0a1af] hover:text-white hover:bg-[#22232c] border border-[#272832]'
-                  }
-                `}
-              >
-                {cat}
-              </button>
-            );
-          })}
-        </div>
+        <div className="h-px w-full bg-[#24262d]" />
       </div>
 
-      {/* Heatmap Grid Viewport: Controlled horizontal scrolling for mobile / tablet only if width < 720px */}
-      <div
-        ref={scrollViewportRef}
-        id="heatmap-scroll-viewport"
-        className="graph-viewport-scroll relative mt-4 sm:mt-6 select-none pb-2 pt-1 -mx-2 px-2 sm:mx-0 sm:px-0"
-      >
-        <div className="min-w-[700px] w-full select-none">
-          {/* Calendar Layout Container */}
-          <div className="flex items-start">
-            {/* Weekday labels on the left (Mon, Wed, Fri) */}
-            <div className="flex flex-col justify-between pt-[22px] pr-2.5 text-[10px] sm:text-[11px] font-mono text-[#787989] select-none shrink-0 w-7 sm:w-8">
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none opacity-0">Sun</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Mon</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Tue</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Wed</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Thu</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Fri</span>
-              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Sat</span>
-            </div>
+      {/* ---------------------------------------------------
+          GitHub-style calendar
+      --------------------------------------------------- */}
 
-            {/* Grid & Month Labels Header Container */}
-            <div className="flex-1 flex flex-col min-w-0">
-              {/* Month Labels row positioned above corresponding week columns */}
-              <div className="relative h-5 text-[10px] sm:text-[11px] font-mono text-[#8b8c9d] pointer-events-none mb-1">
-                {monthLabels.map((m, idx) => (
-                  <span
-                    key={`${m.label}-${idx}`}
-                    className="absolute top-0 font-medium whitespace-nowrap"
-                    style={{
-                      left: `${(m.colIndex / weeks.length) * 100}%`,
-                    }}
-                  >
-                    {m.label}
-                  </span>
-                ))}
-              </div>
+      <div className="mt-6 w-full overflow-x-auto overflow-y-hidden pb-2">
+        <div
+          className="
+            min-w-[920px]
+            w-full
+          "
+        >
+          {/* Month names */}
 
-              {/* Week Columns Grid: 53 columns spaced evenly */}
-              <div className="flex justify-between items-center w-full gap-[2px] sm:gap-[3px] lg:gap-[3.5px]">
-                {weeks.map((week, wIdx) => (
-                  <div
-                    key={`week-${wIdx}`}
-                    className="flex flex-col gap-[3px] sm:gap-[3.5px] lg:gap-[4px] flex-1 items-center"
-                  >
-                    {week.map((day, dIdx) => {
-                      if (!day) {
-                        return (
-                          <div
-                            key={`empty-${wIdx}-${dIdx}`}
-                            className="w-full max-w-[12px] sm:max-w-[14px] lg:max-w-[15px] aspect-square opacity-0 pointer-events-none"
-                          />
-                        );
-                      }
-                      const isSelected = activeTouchDay?.date === day.date;
-                      return (
-                        <div key={day.date} className="w-full max-w-[12px] sm:max-w-[14px] lg:max-w-[15px] aspect-square flex items-center justify-center">
-                          <ContributionCell
-                            day={day}
-                            onHover={handleCellHover}
-                            onLeave={handleCellLeave}
-                            onClick={handleCellClick}
-                            isSelected={isSelected}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: `34px repeat(12, minmax(0, 1fr))`,
+              columnGap: 6,
+            }}
+          >
+            <div />
+
+            {MONTHS.map((month, index) => (
+              <div
+                key={month}
+                className="text-center text-[10px] sm:text-[11px] font-mono text-[#858799]"
+              >
+                {month}
               </div>
-            </div>
+            ))}
           </div>
-        </div>
 
-        {/* Desktop Hover Tooltip */}
-        <AnimatePresence>
-          {hover.day && !activeTouchDay && (
-            <motion.div
-              initial={{ opacity: 0, y: 3, scale: 0.96 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 2, scale: 0.96 }}
-              transition={{ duration: 0.1, ease: 'easeOut' }}
-              className="absolute z-50 pointer-events-none -translate-x-1/2 -translate-y-full mb-2"
+          {/* Calendar body */}
+
+          <div className="mt-2 flex">
+            {/* Weekday labels */}
+
+            <div
+              className="mr-2 flex shrink-0 flex-col justify-between py-[1px]"
               style={{
-                left: `${hover.x}px`,
-                top: `${hover.y}px`,
+                width: 26,
+                height: 7 * CELL_SIZE + 6 * CELL_GAP,
               }}
             >
-              <div className="bg-[#171822]/95 backdrop-blur-md border border-[#2e2f3d] shadow-[0_6px_20px_rgba(0,0,0,0.65)] rounded-md px-3 py-2 text-center whitespace-nowrap">
-                <div className="text-[11px] font-mono text-[#9b9ca8] leading-tight mb-0.5">
-                  {formatTooltipDate(hover.day.date)}
-                </div>
-                <div className="text-xs font-semibold font-display">
-                  <span
-                    className={
-                      hover.day.isFuture
-                        ? 'text-[#6c6d7d]'
-                        : hover.day.count > 0
-                        ? 'text-[#ffdb1a]'
-                        : 'text-[#828393]'
-                    }
+              {WEEKDAYS.map((day, index) => (
+                <span
+                  key={`${day}-${index}`}
+                  className="text-[9px] font-mono text-[#77798a]"
+                >
+                  {day}
+                </span>
+              ))}
+            </div>
+
+            {/* Months */}
+
+            <div className="flex min-w-0 flex-1 gap-2">
+              {monthData.map((monthDays, monthIndex) => {
+                /*
+                  Convert the month into GitHub-style columns.
+                  Each column represents one week.
+                */
+
+                const columns: ContributionDay[][] = [];
+
+                let currentColumn: ContributionDay[] = [];
+
+                const firstDay = monthDays[0];
+
+                if (firstDay) {
+                  const jsDay = firstDay.dateObj.getDay();
+
+                  /*
+                    GitHub starts weeks on Sunday.
+                    0 = Sunday.
+                  */
+
+                  for (let i = 0; i < jsDay; i++) {
+                    currentColumn.push(null as unknown as ContributionDay);
+                  }
+                }
+
+                monthDays.forEach((day) => {
+                  currentColumn.push(day);
+
+                  if (currentColumn.length === 7) {
+                    columns.push(currentColumn);
+                    currentColumn = [];
+                  }
+                });
+
+                if (currentColumn.length > 0) {
+                  while (currentColumn.length < 7) {
+                    currentColumn.push(
+                      null as unknown as ContributionDay
+                    );
+                  }
+
+                  columns.push(currentColumn);
+                }
+
+                return (
+                  <div
+                    key={MONTHS[monthIndex]}
+                    className="flex flex-1 justify-center"
                   >
-                    {getConceptCountLabel(hover.day.count, hover.day.isFuture)}
-                  </span>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                    <div className="flex gap-[5px]">
+                      {columns.map((column, columnIndex) => (
+                        <div
+                          key={`${monthIndex}-${columnIndex}`}
+                          className="flex flex-col gap-[5px]"
+                        >
+                          {column.map((day, rowIndex) => {
+                            if (!day) {
+                              return (
+                                <div
+                                  key={`${monthIndex}-${columnIndex}-${rowIndex}-empty`}
+                                  style={{
+                                    width: CELL_SIZE,
+                                    height: CELL_SIZE,
+                                  }}
+                                />
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={day.date}
+                                role="gridcell"
+                                aria-label={`${formatDate(day.date)}: ${
+                                  day.count
+                                } concepts learned`}
+                                onMouseEnter={(event) =>
+                                  handleMouseEnter(event, day)
+                                }
+                                onMouseMove={(event) =>
+                                  handleMouseMove(event, day)
+                                }
+                                onMouseLeave={handleMouseLeave}
+                                style={{
+                                  width: CELL_SIZE,
+                                  height: CELL_SIZE,
+                                  ...getCellStyle(day),
+                                }}
+                                className="
+                                  relative
+                                  shrink-0
+                                  cursor-pointer
+                                  rounded-[3px]
+                                  transition-transform
+                                  duration-100
+                                  hover:scale-[1.18]
+                                  hover:z-20
+                                "
+                              />
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Mobile/Tablet Touch Popover Banner (Tapping on touch devices) */}
-      <AnimatePresence>
-        {activeTouchDay && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-            className="mt-3 p-3 rounded-lg bg-[#1a1b24] border border-[#ffdb1a]/40 shadow-lg flex items-center justify-between gap-3 flex-wrap text-xs"
-          >
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-[2px] bg-[#ffdb1a] shadow-[0_0_8px_#ffdb1a]" />
-              <div>
-                <span className="font-bold text-white">
-                  {formatTooltipDate(activeTouchDay.date)}:
-                </span>{' '}
-                <span className="font-mono text-[#ffdb1a]">
-                  {getConceptCountLabel(activeTouchDay.count, activeTouchDay.isFuture)}
-                </span>
-              </div>
-            </div>
+      {/* ---------------------------------------------------
+          Bottom stats
+      --------------------------------------------------- */}
 
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  sound.playClick(1000);
-                  setInspectedDay(activeTouchDay);
-                  setActiveTouchDay(null);
-                }}
-                className="px-2.5 py-1 rounded bg-[#ffdb1a] text-black font-semibold text-[11px] flex items-center gap-1 hover:bg-[#ffe043] transition-colors"
-              >
-                <Eye className="w-3 h-3" />
-                <span>View Details</span>
-              </button>
-              <button
-                onClick={() => setActiveTouchDay(null)}
-                className="p-1 text-[#8b8c9d] hover:text-white rounded"
-                aria-label="Close"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div
+        className="
+          mt-4
+          flex
+          flex-col
+          gap-4
+          border-t
+          border-[#24262d]
+          pt-4
+          sm:flex-row
+          sm:items-center
+          sm:justify-between
+        "
+      >
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <div className="text-xs font-mono text-[#8a8c9c]">
+            <span className="font-bold text-white">{activeDays}</span>{' '}
+            active days
+          </div>
 
-      {/* Footer: Year Insights & Intensity Legend */}
-      <div className="mt-4 sm:mt-5 pt-3 sm:pt-4 border-t border-[#1e1f27] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-        {/* Quick Insights Row */}
-        <div className="flex items-center gap-3 sm:gap-6 text-[#9a9ba8] flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <span className="text-white font-semibold font-mono">{stats.activeDays}</span>
-            <span className="text-[11px] sm:text-xs">active days</span>
+          <div className="text-xs font-mono text-[#8a8c9c]">
+            <span className="font-bold text-white">{totalConcepts}</span>{' '}
+            concepts
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-white font-semibold font-mono">{stats.totalConcepts}</span>
-            <span className="text-[11px] sm:text-xs">concepts</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[#ffdb1a] font-semibold font-mono">{stats.activePercentage}%</span>
-            <span className="text-[11px] sm:text-xs">consistency</span>
+
+          <div className="text-xs font-mono text-[#8a8c9c]">
+            <span className="font-bold text-[#ffdb1a]">
+              {Number.isFinite(consistency)
+                ? consistency.toFixed(1)
+                : '0.0'}
+              %
+            </span>{' '}
+            consistency
           </div>
         </div>
 
-        {/* Intensity Legend */}
-        <div className="flex items-center gap-1.5 sm:gap-2 self-start sm:self-auto text-[10px] sm:text-[11px] text-[#787989] font-mono">
+        {/* Legend */}
+
+        <div className="flex items-center gap-2 text-[10px] font-mono text-[#77798a]">
           <span>Less</span>
+
           <div className="flex items-center gap-1">
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#17181e] border border-[#22232a]" title="0 concepts" />
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#473b12] border border-[#665416]" title="1-2 concepts" />
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#705c12] border border-[#947a16]" title="3-4 concepts" />
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#ab890e] border border-[#cfa40e]" title="5-6 concepts" />
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#e5b80b] border-[#ffd426]" title="7-8 concepts" />
-            <div className="w-[10px] h-[10px] sm:w-[11px] sm:h-[11px] rounded-[2px] bg-[#ffdb1a] border-white shadow-[0_0_6px_rgba(255,219,26,0.8)]" title="9+ concepts" />
+            {[0, 1, 2, 3, 4, 5].map((intensity) => (
+              <span
+                key={intensity}
+                className="h-3 w-3 rounded-[2px]"
+                style={getCellStyle({
+                  date: '',
+                  dateObj: new Date(),
+                  count: intensity,
+                  commits: [],
+                  intensity: intensity as 0 | 1 | 2 | 3 | 4 | 5,
+                  dayOfWeek: 0,
+                  isToday: false,
+                  isFuture: false,
+                })}
+              />
+            ))}
           </div>
+
           <span>More</span>
         </div>
       </div>
 
-      {/* Inspected Day Detail Modal (Responsive centered/bottom modal) */}
-      <AnimatePresence>
-        {inspectedDay && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-[#15161d] border border-[#2e2f3b] rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl max-h-[90vh] flex flex-col"
-            >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#242531]">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-[#ffdb1a]/10 text-[#ffdb1a]">
-                    <Calendar className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm sm:text-base font-bold text-white font-display leading-snug">
-                      {formatDateFull(inspectedDay.date)}
-                    </h3>
-                    <p className="text-xs text-[#8d8e9d]">
-                      {inspectedDay.count} {inspectedDay.count === 1 ? 'concept' : 'concepts'} committed
-                      {inspectedDay.isToday && ' • Today'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setInspectedDay(null)}
-                  className="p-1.5 text-[#888998] hover:text-white rounded-md hover:bg-[#20212c] transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+      {/* ---------------------------------------------------
+          Tooltip
+      --------------------------------------------------- */}
 
-              {/* Commits List */}
-              <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
-                {inspectedDay.commits.length > 0 ? (
-                  inspectedDay.commits.map((commit, idx) => (
-                    <div
-                      key={commit.id || idx}
-                      className="p-3 sm:p-3.5 rounded-lg bg-[#1a1b24] border border-[#272836] hover:border-[#38394a] transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[11px] font-mono text-[#ffdb1a] bg-[#ffdb1a]/10 px-1.5 py-0.5 rounded">
-                            {commit.timestamp}
-                          </span>
-                          <span className="text-xs sm:text-sm font-semibold text-white">{commit.concept}</span>
-                        </div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#252634] text-[#b0b1c0] border border-[#303142] shrink-0">
-                          {commit.category}
-                        </span>
-                      </div>
-                      {commit.notes && (
-                        <p className="text-xs text-[#a2a3b4] leading-relaxed pl-2 border-l-2 border-[#ffdb1a]/40 mt-2 font-mono text-[11px]">
-                          {commit.notes}
-                        </p>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="py-8 text-center text-[#747585]">
-                    <p className="text-xs sm:text-sm">No learning activities recorded for this date.</p>
-                    {inspectedDay.isToday && (
-                      <button
-                        onClick={() => {
-                          setInspectedDay(null);
-                          onQuickCommit();
-                        }}
-                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-[#ffdb1a] hover:underline"
-                      >
-                        + Commit your first concept today
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-3 sm:p-4 bg-[#111218] border-t border-[#20212c] flex items-center justify-between text-xs">
-                <span className="text-[#727382] font-mono text-[11px]">
-                  Heatmap Tier: Level {inspectedDay.intensity} / 5
-                </span>
-                <button
-                  onClick={() => setInspectedDay(null)}
-                  className="px-3.5 py-1.5 rounded-lg bg-[#22232e] text-white hover:bg-[#2b2c3a] transition-colors font-medium text-xs"
-                >
-                  Close
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
+      {tooltipElement}
+    </section>
   );
 };
+
+export default ContributionGraph;
