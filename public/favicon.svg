@@ -1,0 +1,32 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Yellow glowing outer square -->
+  <rect
+    x="8"
+    y="8"
+    width="48"
+    height="48"
+    rx="9"
+    fill="#FFDB1A"
+    filter="url(#glow)"
+  />
+
+  <!-- Black inner square -->
+  <rect
+    x="23"
+    y="23"
+    width="18"
+    height="18"
+    rx="3"
+    fill="#090A0D"
+  />
+</svg>
