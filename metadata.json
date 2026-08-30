@@ -1,0 +1,6 @@
+{
+  "name": "JAUNE",
+  "description": "A futuristic visual learning-progress platform inspired by GitHub's contribution graph. Commit your learnings, watch today's contribution cell glow, and build knowledge streaks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
