@@ -156,7 +156,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-6 sm:space-y-8">
+      <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-7 lg:px-8 xl:px-10 py-4 sm:py-6 lg:py-8 space-y-6 sm:space-y-8">
         {/* Dynamic Greeting & Primary Commit CTA */}
         <DashboardHeader
           userName={user.name}
@@ -339,7 +339,7 @@ export default function App() {
 
       {/* Futuristic Editorial Footer */}
       <footer className="mt-12 sm:mt-16 border-t border-[#1a1b24] bg-[#090a0d] py-8 sm:py-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 text-xs text-[#707182]">
+        <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-7 lg:px-8 xl:px-10 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-6 text-xs text-[#707182]">
           <div className="flex items-center gap-3">
             <div className="w-5 h-5 rounded-[4px] bg-[#ffdb1a] flex items-center justify-center text-black font-extrabold text-[10px]">
               J

@@ -336,18 +336,18 @@ export const ContributionGraph: React.FC<ContributionGraphProps> = ({
         id="heatmap-scroll-viewport"
         className="graph-viewport-scroll relative mt-4 sm:mt-6 select-none pb-2 pt-1 -mx-2 px-2 sm:mx-0 sm:px-0"
       >
-        <div className="min-w-[680px] w-full select-none">
+        <div className="min-w-[700px] w-full select-none">
           {/* Calendar Layout Container */}
           <div className="flex items-start">
             {/* Weekday labels on the left (Mon, Wed, Fri) */}
-            <div className="flex flex-col justify-between pt-[22px] pr-2 text-[10px] font-mono text-[#787989] select-none shrink-0 w-7 sm:w-8">
-              <span className="h-[10px] sm:h-[11px] leading-none opacity-0">Sun</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px]">Mon</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px] opacity-0">Tue</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px]">Wed</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px] opacity-0">Thu</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px]">Fri</span>
-              <span className="h-[10px] sm:h-[11px] leading-none mt-[3px] sm:mt-[4px] opacity-0">Sat</span>
+            <div className="flex flex-col justify-between pt-[22px] pr-2.5 text-[10px] sm:text-[11px] font-mono text-[#787989] select-none shrink-0 w-7 sm:w-8">
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none opacity-0">Sun</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Mon</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Tue</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Wed</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Thu</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px]">Fri</span>
+              <span className="h-[11px] sm:h-[13px] lg:h-[14px] leading-none mt-[3px] sm:mt-[3.5px] lg:mt-[4px] opacity-0">Sat</span>
             </div>
 
             {/* Grid & Month Labels Header Container */}
@@ -368,24 +368,24 @@ export const ContributionGraph: React.FC<ContributionGraphProps> = ({
               </div>
 
               {/* Week Columns Grid: 53 columns spaced evenly */}
-              <div className="flex justify-between items-center w-full gap-[2px] sm:gap-[3px]">
+              <div className="flex justify-between items-center w-full gap-[2px] sm:gap-[3px] lg:gap-[3.5px]">
                 {weeks.map((week, wIdx) => (
                   <div
                     key={`week-${wIdx}`}
-                    className="flex flex-col gap-[3px] sm:gap-[4px] flex-1 items-center"
+                    className="flex flex-col gap-[3px] sm:gap-[3.5px] lg:gap-[4px] flex-1 items-center"
                   >
                     {week.map((day, dIdx) => {
                       if (!day) {
                         return (
                           <div
                             key={`empty-${wIdx}-${dIdx}`}
-                            className="w-full max-w-[12px] sm:max-w-[13px] aspect-square opacity-0 pointer-events-none"
+                            className="w-full max-w-[12px] sm:max-w-[14px] lg:max-w-[15px] aspect-square opacity-0 pointer-events-none"
                           />
                         );
                       }
                       const isSelected = activeTouchDay?.date === day.date;
                       return (
-                        <div key={day.date} className="w-full max-w-[12px] sm:max-w-[13px] aspect-square flex items-center justify-center">
+                        <div key={day.date} className="w-full max-w-[12px] sm:max-w-[14px] lg:max-w-[15px] aspect-square flex items-center justify-center">
                           <ContributionCell
                             day={day}
                             onHover={handleCellHover}

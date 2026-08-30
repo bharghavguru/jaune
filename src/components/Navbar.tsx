@@ -73,7 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full bg-[#0d0e12]/95 backdrop-blur-md border-b border-[#1e1f28]">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-7 lg:px-8 xl:px-10 h-14 flex items-center justify-between gap-2 sm:gap-4">
         {/* Left: Brand JAUNE */}
         <div className="flex items-center gap-4 sm:gap-6">
           <button
