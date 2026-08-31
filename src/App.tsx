@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+
 import {
   INITIAL_USER,
   INITIAL_SPACES,
@@ -6,7 +7,9 @@ import {
   INITIAL_STATS,
   generateYearContributions,
 } from './data/initialData';
-import { LearningCommit, LearningSpace } from './types';
+
+import { LearningCommit, LearningSpace, UserStats } from './types';
+
 import { Navbar } from './components/Navbar';
 import { DashboardHeader } from './components/DashboardHeader';
 import { Metrics } from './components/Metrics';
@@ -19,39 +22,44 @@ import { ProfilePreview } from './components/ProfilePreview';
 import { CommitModal } from './components/CommitModal';
 import { CommandPalette } from './components/CommandPalette';
 import { Toast } from './components/Toast';
+
 import { motion } from 'motion/react';
 import { sound } from './utils/sound';
+
 import {
   loadLearningCommits,
   saveLearningCommits,
+  loadSpaces,
+  saveSpaces,
+  loadStats,
+  saveStats,
 } from './utils/storage';
 
 export default function App() {
+  // =====================================================
+  // USER
+  // =====================================================
+
   const [user] = useState(INITIAL_USER);
 
-  const [stats, setStats] = useState(INITIAL_STATS);
+  // =====================================================
+  // LEARNING HISTORY
+  // =====================================================
 
-  /*
-   * Complete learning history.
-   *
-   * This is now the main source of truth for
-   * all learning commits in JAUNE.
-   */
-  const [learningCommits, setLearningCommits] =
-    useState<LearningCommit[]>(() => {
-      const savedCommits = loadLearningCommits();
+  const [learningCommits, setLearningCommits] = useState<
+    LearningCommit[]
+  >(() => {
+    const savedCommits = loadLearningCommits();
 
-      return savedCommits.length > 0
-        ? savedCommits
-        : INITIAL_TODAY_COMMITS;
-    });
+    return savedCommits.length > 0
+      ? savedCommits
+      : INITIAL_TODAY_COMMITS;
+  });
 
-  /*
-   * Today's commits are derived from the
-   * complete learning history.
-   *
-   * We don't store today's commits separately.
-   */
+  // =====================================================
+  // TODAY'S COMMITS
+  // =====================================================
+
   const todayCommits = useMemo(() => {
     const now = new Date();
 
@@ -73,8 +81,27 @@ export default function App() {
     );
   }, [learningCommits]);
 
-  const [spaces, setSpaces] =
-    useState<LearningSpace[]>(INITIAL_SPACES);
+  // =====================================================
+  // STATS
+  // =====================================================
+
+  const [stats, setStats] = useState<UserStats>(() => {
+    return loadStats(INITIAL_STATS);
+  });
+
+  // =====================================================
+  // LEARNING SPACES
+  // =====================================================
+
+  const [spaces, setSpaces] = useState<LearningSpace[]>(
+    () => {
+      return loadSpaces(INITIAL_SPACES);
+    }
+  );
+
+  // =====================================================
+  // UI STATE
+  // =====================================================
 
   const [activeTab, setActiveTab] =
     useState<string>('Overview');
@@ -91,30 +118,44 @@ export default function App() {
   const [toastMessage, setToastMessage] =
     useState<string | null>(null);
 
-  /*
-   * Save complete learning history
-   * whenever it changes.
-   */
+  // =====================================================
+  // SAVE LEARNING HISTORY
+  // =====================================================
+
   useEffect(() => {
     saveLearningCommits(learningCommits);
   }, [learningCommits]);
 
-  /*
-   * Generate contribution graph from
-   * ALL learning history.
-   */
+  // =====================================================
+  // SAVE LEARNING SPACES
+  // =====================================================
+
+  useEffect(() => {
+    saveSpaces(spaces);
+  }, [spaces]);
+
+  // =====================================================
+  // SAVE STATS
+  // =====================================================
+
+  useEffect(() => {
+    saveStats(stats);
+  }, [stats]);
+
+  // =====================================================
+  // CONTRIBUTION GRAPH
+  // =====================================================
+
   const contributionDays = useMemo(() => {
     return generateYearContributions(
       learningCommits
     );
   }, [learningCommits]);
 
-  /*
-   * Global keyboard shortcuts.
-   *
-   * Ctrl + K / Cmd + K → Command Palette
-   * C → Commit new concept
-   */
+  // =====================================================
+  // GLOBAL KEYBOARD SHORTCUTS
+  // =====================================================
+
   useEffect(() => {
     const handleGlobalKeyDown = (
       e: KeyboardEvent
@@ -124,9 +165,7 @@ export default function App() {
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement;
 
-      /*
-       * Command Palette
-       */
+      // Ctrl + K / Cmd + K
       if (
         (e.metaKey || e.ctrlKey) &&
         e.key.toLowerCase() === 'k'
@@ -140,9 +179,7 @@ export default function App() {
         return;
       }
 
-      /*
-       * Quick Commit
-       */
+      // C = Quick Commit
       if (
         e.key.toLowerCase() === 'c' &&
         !isInput &&
@@ -173,9 +210,10 @@ export default function App() {
     isCommandPaletteOpen,
   ]);
 
-  /*
-   * Create a new learning commit.
-   */
+  // =====================================================
+  // CREATE NEW LEARNING COMMIT
+  // =====================================================
+
   const handleCommitLearning = (
     newCommitData: {
       concept: string;
@@ -190,9 +228,7 @@ export default function App() {
   ) => {
     const now = new Date();
 
-    /*
-     * Current time
-     */
+    // Current time
     const hours = now
       .getHours()
       .toString()
@@ -206,12 +242,7 @@ export default function App() {
     const timeFormatted =
       `${hours}:${minutes}`;
 
-    /*
-     * Current local date
-     *
-     * Format:
-     * YYYY-MM-DD
-     */
+    // Current date
     const year =
       now.getFullYear();
 
@@ -228,9 +259,10 @@ export default function App() {
     const dateString =
       `${year}-${month}-${day}`;
 
-    /*
-     * Create learning commit
-     */
+    // ===================================================
+    // NEW COMMIT
+    // ===================================================
+
     const newCommit: LearningCommit = {
       id: `commit-live-${Date.now()}`,
 
@@ -255,17 +287,19 @@ export default function App() {
       dateString,
     };
 
-    /*
-     * Add commit to COMPLETE history.
-     */
+    // ===================================================
+    // ADD TO COMPLETE HISTORY
+    // ===================================================
+
     setLearningCommits((prev) => [
       newCommit,
       ...prev,
     ]);
 
-    /*
-     * Update Learning Spaces.
-     */
+    // ===================================================
+    // UPDATE LEARNING SPACES
+    // ===================================================
+
     setSpaces((prevSpaces) => {
       const existingSpace =
         prevSpaces.find(
@@ -274,9 +308,7 @@ export default function App() {
             newCommitData.category
         );
 
-      /*
-       * Existing space
-       */
+      // Existing space
       if (existingSpace) {
         return prevSpaces.map(
           (space) => {
@@ -305,9 +337,7 @@ export default function App() {
         );
       }
 
-      /*
-       * Create a new custom space.
-       */
+      // New custom space
       const newSpace: LearningSpace = {
         id:
           `space-${Date.now()}`,
@@ -348,9 +378,10 @@ export default function App() {
       ];
     });
 
-    /*
-     * Update statistics.
-     */
+    // ===================================================
+    // UPDATE STATS
+    // ===================================================
+
     setStats((prevStats) => ({
       ...prevStats,
 
@@ -367,29 +398,27 @@ export default function App() {
         prevStats.conceptsThisMonth + 1,
     }));
 
-    /*
-     * Success toast.
-     */
+    // ===================================================
+    // SUCCESS TOAST
+    // ===================================================
+
     setToastMessage(
       `Committed "${newCommit.concept}" to ${newCommit.category}`
     );
 
-    /*
-     * Close commit modal.
-     */
+    // Close modal
     setIsCommitModalOpen(false);
 
-    /*
-     * Remove toast.
-     */
+    // Remove toast
     window.setTimeout(() => {
       setToastMessage(null);
     }, 4000);
   };
 
-  /*
-   * Select a learning space.
-   */
+  // =====================================================
+  // SELECT LEARNING SPACE
+  // =====================================================
+
   const handleSelectSpace = (
     spaceName: string
   ) => {
@@ -405,9 +434,10 @@ export default function App() {
     });
   };
 
-  /*
-   * Categories for filtering.
-   */
+  // =====================================================
+  // CATEGORY FILTERS
+  // =====================================================
+
   const categoriesList = useMemo(() => {
     return [
       'All',
@@ -417,12 +447,16 @@ export default function App() {
     ];
   }, [spaces]);
 
+  // =====================================================
+  // RENDER
+  // =====================================================
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#0c0d10] text-[#f3f3ee] flex flex-col selection:bg-[#ffdb1a] selection:text-black">
 
-      {/* =========================
+      {/* =================================================
           NAVBAR
-      ========================== */}
+      ================================================== */}
 
       <Navbar
         activeTab={activeTab}
@@ -441,9 +475,9 @@ export default function App() {
         user={user}
       />
 
-      {/* =========================
+      {/* =================================================
           MAIN CONTENT
-      ========================== */}
+      ================================================== */}
 
       <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 md:px-7 lg:px-8 xl:px-10 py-4 sm:py-6 lg:py-8 space-y-6 sm:space-y-8">
 
@@ -462,9 +496,9 @@ export default function App() {
           }
         />
 
-        {/* =========================
+        {/* =================================================
             OVERVIEW
-        ========================== */}
+        ================================================== */}
 
         {activeTab === 'Overview' && (
           <motion.div
@@ -514,7 +548,6 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
 
               <div className="lg:col-span-7 h-full">
-
                 <TodayLearning
                   commits={
                     todayCommits
@@ -523,11 +556,9 @@ export default function App() {
                     setIsCommitModalOpen(true)
                   }
                 />
-
               </div>
 
               <div className="lg:col-span-5 h-full">
-
                 <StreakCard
                   currentStreak={
                     stats.streakCurrent
@@ -539,7 +570,6 @@ export default function App() {
                     todayCommits.length
                   }
                 />
-
               </div>
 
             </div>
@@ -561,9 +591,9 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* =========================
+        {/* =================================================
             LEARNING
-        ========================== */}
+        ================================================== */}
 
         {activeTab === 'Learning' && (
           <motion.div
@@ -588,7 +618,6 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
 
               <div className="lg:col-span-8">
-
                 <TodayLearning
                   commits={
                     todayCommits
@@ -597,7 +626,6 @@ export default function App() {
                     setIsCommitModalOpen(true)
                   }
                 />
-
               </div>
 
               <div className="lg:col-span-4 space-y-6">
@@ -660,9 +688,9 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* =========================
+        {/* =================================================
             INSIGHTS
-        ========================== */}
+        ================================================== */}
 
         {activeTab === 'Insights' && (
           <motion.div
@@ -716,9 +744,9 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* =========================
+        {/* =================================================
             SPACES
-        ========================== */}
+        ================================================== */}
 
         {activeTab === 'Spaces' && (
           <motion.div
@@ -771,9 +799,9 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* =========================
+        {/* =================================================
             PROFILE
-        ========================== */}
+        ================================================== */}
 
         {activeTab === 'Profile' && (
           <motion.div
@@ -824,9 +852,9 @@ export default function App() {
 
       </main>
 
-      {/* =========================
+      {/* =================================================
           FOOTER
-      ========================== */}
+      ================================================== */}
 
       <footer className="mt-12 sm:mt-16 border-t border-[#1a1b24] bg-[#090a0d] py-8 sm:py-10">
 
@@ -884,9 +912,9 @@ export default function App() {
 
       </footer>
 
-      {/* =========================
+      {/* =================================================
           COMMIT MODAL
-      ========================== */}
+      ================================================== */}
 
       <CommitModal
         isOpen={
@@ -903,9 +931,9 @@ export default function App() {
         )}
       />
 
-      {/* =========================
+      {/* =================================================
           COMMAND PALETTE
-      ========================== */}
+      ================================================== */}
 
       <CommandPalette
         isOpen={
@@ -928,9 +956,9 @@ export default function App() {
         }
       />
 
-      {/* =========================
+      {/* =================================================
           TOAST
-      ========================== */}
+      ================================================== */}
 
       <Toast
         message={

@@ -1,79 +1,232 @@
-import { LearningCommit } from '../types';
+import {
+  LearningCommit,
+  LearningSpace,
+  UserStats,
+  UserProfile,
+} from '../types';
 
-const LEARNING_COMMITS_KEY = 'jaune-learning-commits';
+const STORAGE_KEYS = {
+  commits: 'jaune_commits',
+  spaces: 'jaune_spaces',
+  stats: 'jaune_stats',
+  user: 'jaune_user',
+} as const;
 
-/**
- * Load all learning commits saved in JAUNE.
- */
-export function loadLearningCommits(): LearningCommit[] {
+function isBrowser(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.localStorage !== 'undefined'
+  );
+}
+
+// =====================================================
+// LEARNING COMMITS
+// =====================================================
+
+export function loadLearningCommits(
+  fallback: LearningCommit[] = []
+): LearningCommit[] {
+  if (!isBrowser()) {
+    return fallback;
+  }
+
   try {
-    const saved = localStorage.getItem(LEARNING_COMMITS_KEY);
+    const saved = localStorage.getItem(STORAGE_KEYS.commits);
 
     if (!saved) {
-      return [];
+      return fallback;
     }
 
-    const parsed = JSON.parse(saved);
+    const parsed: unknown = JSON.parse(saved);
 
     if (!Array.isArray(parsed)) {
-      return [];
+      return fallback;
     }
 
     return parsed as LearningCommit[];
   } catch (error) {
-    console.error(
-      'Failed to load learning commits:',
-      error
-    );
-
-    return [];
+    console.error('JAUNE: Failed to load learning commits.', error);
+    return fallback;
   }
 }
 
-/**
- * Save all learning commits.
- */
 export function saveLearningCommits(
   commits: LearningCommit[]
 ): void {
+  if (!isBrowser()) {
+    return;
+  }
+
   try {
     localStorage.setItem(
-      LEARNING_COMMITS_KEY,
+      STORAGE_KEYS.commits,
       JSON.stringify(commits)
     );
   } catch (error) {
-    console.error(
-      'Failed to save learning commits:',
-      error
-    );
+    console.error('JAUNE: Failed to save learning commits.', error);
   }
 }
 
-/**
- * Add one new learning commit to history.
- */
-export function addLearningCommit(
-  commit: LearningCommit
-): LearningCommit[] {
-  const existingCommits = loadLearningCommits();
+// =====================================================
+// LEARNING SPACES
+// =====================================================
 
-  const updatedCommits = [
-    commit,
-    ...existingCommits,
-  ];
+export function loadSpaces(
+  fallback: LearningSpace[] = []
+): LearningSpace[] {
+  if (!isBrowser()) {
+    return fallback;
+  }
 
-  saveLearningCommits(updatedCommits);
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.spaces);
 
-  return updatedCommits;
+    if (!saved) {
+      return fallback;
+    }
+
+    const parsed: unknown = JSON.parse(saved);
+
+    if (!Array.isArray(parsed)) {
+      return fallback;
+    }
+
+    return parsed as LearningSpace[];
+  } catch (error) {
+    console.error('JAUNE: Failed to load learning spaces.', error);
+    return fallback;
+  }
 }
 
-/**
- * Clear all saved learning history.
- *
- * Useful during development/testing.
- */
-export function clearLearningHistory(): void {
-  localStorage.removeItem(
-    LEARNING_COMMITS_KEY
-  );
+export function saveSpaces(
+  spaces: LearningSpace[]
+): void {
+  if (!isBrowser()) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.spaces,
+      JSON.stringify(spaces)
+    );
+  } catch (error) {
+    console.error('JAUNE: Failed to save learning spaces.', error);
+  }
+}
+
+// =====================================================
+// USER STATS
+// =====================================================
+
+export function loadStats(
+  fallback: UserStats
+): UserStats {
+  if (!isBrowser()) {
+    return fallback;
+  }
+
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.stats);
+
+    if (!saved) {
+      return fallback;
+    }
+
+    const parsed: unknown = JSON.parse(saved);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return fallback;
+    }
+
+    return {
+      ...fallback,
+      ...(parsed as Partial<UserStats>),
+    };
+  } catch (error) {
+    console.error('JAUNE: Failed to load stats.', error);
+    return fallback;
+  }
+}
+
+export function saveStats(
+  stats: UserStats
+): void {
+  if (!isBrowser()) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.stats,
+      JSON.stringify(stats)
+    );
+  } catch (error) {
+    console.error('JAUNE: Failed to save stats.', error);
+  }
+}
+
+// =====================================================
+// USER PROFILE
+// =====================================================
+
+export function loadUser(
+  fallback: UserProfile
+): UserProfile {
+  if (!isBrowser()) {
+    return fallback;
+  }
+
+  try {
+    const saved = localStorage.getItem(STORAGE_KEYS.user);
+
+    if (!saved) {
+      return fallback;
+    }
+
+    const parsed: unknown = JSON.parse(saved);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return fallback;
+    }
+
+    return {
+      ...fallback,
+      ...(parsed as Partial<UserProfile>),
+    };
+  } catch (error) {
+    console.error('JAUNE: Failed to load user profile.', error);
+    return fallback;
+  }
+}
+
+export function saveUser(
+  user: UserProfile
+): void {
+  if (!isBrowser()) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(
+      STORAGE_KEYS.user,
+      JSON.stringify(user)
+    );
+  } catch (error) {
+    console.error('JAUNE: Failed to save user profile.', error);
+  }
+}
+
+// =====================================================
+// CLEAR ALL JAUNE LOCAL DATA
+// =====================================================
+
+export function clearJauneStorage(): void {
+  if (!isBrowser()) {
+    return;
+  }
+
+  Object.values(STORAGE_KEYS).forEach((key) => {
+    localStorage.removeItem(key);
+  });
 }
